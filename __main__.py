@@ -9,6 +9,7 @@ import os
 sys.path.append("lib")
 
 
+# noinspection PyUnusedLocal
 class EnergyManager:
     load_dotenv()
 
@@ -38,18 +39,19 @@ class EnergyManager:
         self.setup_client()
 
     def setup_client(self):
-        self.client.register("energyforwarddiff", value=None, on_write=self.read_energyforwarddiff)
-        self.client.register("energyreversediff", value=None, on_write=self.read_energyreversediff)
+        self.client.register("energy_forward_diff", value=None, on_write=self.read_energy_forward_diff)
+        self.client.register("energy_reverse_diff", value=None, on_write=self.read_energy_reverse_diff)
         # self.client.register("hard_reset", value=False, on_read=self.hard_reset_grid_meter, interval=30)
         self.client.register("energy_balance", value=0, on_read=self.write_energy_balance, interval=1)
         self.client.register("power_of_heaters", value=0, on_read=self.update_power_of_heaters, interval=1)
 
-    def read_energyforwarddiff(self, client, value):
+    # noinspection PyUnusedLocal
+    def read_energy_forward_diff(self, client, value):
         self.energy_forward_diff = value
         self.value_validation['energy_balance_valid'] = True
         logging.info(f"Value of energy_forward_diff updated to: {self.energy_forward_diff:>6}")
 
-    def read_energyreversediff(self, client, value):
+    def read_energy_reverse_diff(self, client, value):
         self.energy_reverse_diff = value
         self.value_validation['energy_balance_valid'] = True
         logging.info(f"Value of energy_reverse_diff updated to: {self.energy_reverse_diff:>6}")

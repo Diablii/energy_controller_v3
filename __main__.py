@@ -3,12 +3,20 @@ import sys
 
 from arduino_iot_cloud import ArduinoCloudClient
 
+from dotenv import load_dotenv
+import os
+
 sys.path.append("lib")
 
 
 class EnergyManager:
-    DEVICE_ID = b"242186a1-15ce-4157-bfb3-81545e4ac2d5"
-    SECRET_KEY = b"anJxtmZnXeNRrlakm1yMd?gUL"
+    load_dotenv()
+
+    device_id = os.getenv('DEVICE_ID')
+    secret_key = os.getenv('SECRET_KEY')
+
+    DEVICE_ID = device_id.encode('utf-8')
+    SECRET_KEY = secret_key.encode('utf-8')
 
     def __init__(self):
         self.state_of_grid_meter = 0

@@ -1,6 +1,4 @@
-import time
 import logging
-import functools
 import sys
 
 from arduino_iot_cloud import ArduinoCloudClient

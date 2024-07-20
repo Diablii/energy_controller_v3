@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "energy-controller"
+version = "0.0.1"
+description = "---"
+authors = ["Diablii <paczekzsl1@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

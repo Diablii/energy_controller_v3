@@ -1,7 +1,6 @@
 from machine import UART, Pin
 import utime
 import struct
-# from threading import Thread
 import _thread
 import network
 import time
@@ -18,9 +17,9 @@ commands = {
     "L1_current": [22, 1],
     "L2_current": [24, 1],
     "L3_current": [26, 1],
-    # "L1_active_power": [30, 1],
-    # "L2_active_power": [32, 1],
-    # "L3_active_power": [34, 1],
+    "L1_active_power": [30, 1],
+    "L2_active_power": [32, 1],
+    "L3_active_power": [34, 1],
     "Total_forward_active_energy": [264, 2],
     "Total_reverse_active_energy": [272, 2],
 }
@@ -38,29 +37,22 @@ modbus_frame = {
     "L1_current": 0,
     "L2_current": 0,
     "L3_current": 0,
-    # "L1_active_power": 0,
-    # "L2_active_power": 0,
-    # "L3_active_power": 0,
+    "L1_active_power": 0,
+    "L2_active_power": 0,
+    "L3_active_power": 0,
     "Total_forward_active_energy": [0, 0],
     "Total_reverse_active_energy": [0, 0],
 }
 
 modbus_frame_old = {
-    "L1_voltage": 0,
-    "L2_voltage": 0,
-    "L3_voltage": 0,
-    "L1_current": 0,
-    "L2_current": 0,
-    "L3_current": 0,
-    # "L1_active_power": 0,
-    # "L2_active_power": 0,
-    # "L3_active_power": 0,
     "Total_forward_active_energy": [0, 0],
     "Total_reverse_active_energy": [0, 0],
 }
 
 diff_reverse_active_energy = 0
 diff_forward_active_energy = 0
+
+grid_meter_frame = ""
 
 
 def calculate_crc(request_to_crc: bytes) -> bytes:
@@ -86,7 +78,7 @@ def modbus_request(uart, slave_addr=SLAVE_ADDRESS, register_addr=DEFAULT_REGISTE
     crc = calculate_crc(request)
     request.extend(crc)
     isResponse = False
-    response = bytes
+    response = bytes()
     while not isResponse:
         uart.write(request)
         utime.sleep(1)
@@ -109,49 +101,23 @@ def wifi_connect():
     logging.info(f"WiFi Connected {wlan.ifconfig()}")
 
 
-def update_l1voltage(client):
+def update_frame():
     global modbus_frame
-    return modbus_frame["L1_voltage"]
+    global grid_meter_frame
+    grid_meter_frame_local = ""
+    for command in ["L1_voltage", "L2_voltage", "L3_voltage",
+                    "L1_current", "L2_current", "L3_current",
+                    "L1_active_power", "L2_active_power", "L3_active_power"]:
+        value_str = str(modbus_frame[command])
+        grid_meter_frame_local = grid_meter_frame_local + command + ":" + value_str + ";"
+    grid_meter_frame = grid_meter_frame_local
+    logging.info(f"Grid Meter Frame: updated - update_frame()")
+    return 0
 
 
-def update_l2voltage(client):
-    global modbus_frame
-    return modbus_frame["L2_voltage"]
-
-
-def update_l3voltage(client):
-    global modbus_frame
-    return modbus_frame["L3_voltage"]
-
-
-def update_l1current(client):
-    global modbus_frame
-    return modbus_frame["L1_current"]
-
-
-def update_l2current(client):
-    global modbus_frame
-    return modbus_frame["L2_current"]
-
-
-def update_l3current(client):
-    global modbus_frame
-    return modbus_frame["L3_current"]
-
-
-# def update_l1power(client):
-#     global modbus_frame
-#     return modbus_frame["L1_active_power"]
-#
-#
-# def update_l2power(client):
-#     global modbus_frame
-#     return modbus_frame["L2_active_power"]
-#
-#
-# def update_l3power(client):
-#     global modbus_frame
-#     return modbus_frame["L3_active_power"]
+def update_frame_cloud(client):
+    global grid_meter_frame
+    return grid_meter_frame
 
 
 def update_total_energy_reverse(client):
@@ -176,7 +142,8 @@ def update_energy_reverse_diff(client):
         diff_time_norm = int(3600 / diff_time)
         diff_reverse_active_energy = (new_value - old_value) * diff_time_norm
         modbus_frame_old[command] = modbus_frame[command].copy()
-        logging.info(f"diff_forward_energy: {diff_reverse_active_energy:>5} | {old_value:>10} | {new_value:>10} | {diff_time:>5}")
+        logging.info(
+            f"diff_reverse_energy: {diff_reverse_active_energy:>5} | {old_value:>10} | {new_value:>10} | {diff_time:>5}")
         if 0 <= diff_reverse_active_energy <= 5100:
             return diff_reverse_active_energy
         else:
@@ -202,7 +169,8 @@ def update_energy_forward_diff(client):
         diff_time_norm = int(3600 / diff_time)
         diff_forward_active_energy = (new_value - old_value) * diff_time_norm
         modbus_frame_old[command] = modbus_frame[command].copy()
-        logging.info(f"diff_forward_energy: {diff_forward_active_energy:>5} | {old_value:>10} | {new_value:>10} | {diff_time:>5}")
+        logging.info(
+            f"diff_forward_energy: {diff_forward_active_energy:>5} | {old_value:>10} | {new_value:>10} | {diff_time:>5}")
         if 0 <= diff_forward_active_energy <= 15000:
             return diff_forward_active_energy
         else:
@@ -220,39 +188,43 @@ def read_modbus_frame():
     uart = UART(0, baudrate=9600, bits=8, parity=0, stop=1, tx=Pin(0), rx=Pin(1))
     state = 0
     global modbus_frame
+    global grid_meter_frame
     while True:
         if state == 1:
+            time.sleep(10)
             logging.info("STANDARD CYCLE - read_modbus_frame()")
-            while True:
-                # for command in ["L1_voltage", "L2_voltage", "L3_voltage", "L1_current", "L2_current", "L3_current",
-                #                 "L1_active_power", "L2_active_power", "L3_active_power",
-                #                 "Total_forward_active_energy", "Total_reverse_active_energy"]:
-                for command in ["L1_voltage", "L2_voltage", "L3_voltage", "L1_current", "L2_current", "L3_current",
-                                "Total_forward_active_energy", "Total_reverse_active_energy"]:
-                    parameter = commands[command]
-                    response = None
-                    while not response:
-                        response = modbus_request(uart, slave_addr=1, register_addr=parameter[0],
-                                                  num_registers=parameter[1], function_code=3)
-                        utime.sleep(0.1)
-                    data = int.from_bytes(response[3:7], 'big')
-                    float_value = struct.unpack('>f', struct.pack('>I', data))[0]
-                    timestamp = utime.time()
-                    if command == "Total_forward_active_energy":
-                        modbus_frame[command][0] = int(float_value * 1000)
-                        modbus_frame[command][1] = timestamp
-                    elif command == "Total_reverse_active_energy":
-                        modbus_frame[command][0] = int(float_value * 1000)
-                        modbus_frame[command][1] = timestamp
-                    else:
-                        modbus_frame[command] = float_value
+            check_memory()
+            for command in ["L1_voltage", "L2_voltage", "L3_voltage",
+                            "L1_current", "L2_current", "L3_current",
+                            "L1_active_power", "L2_active_power", "L3_active_power",
+                            "Total_forward_active_energy", "Total_reverse_active_energy"]:
+                parameter = commands[command]
+                response = None
+                while not response:
+                    response = modbus_request(uart, slave_addr=1, register_addr=parameter[0],
+                                              num_registers=parameter[1], function_code=3)
+                    utime.sleep(0.1)
+                data = int.from_bytes(response[3:7], 'big')
+                float_value = struct.unpack('>f', struct.pack('>I', data))[0]
+                timestamp = utime.time()
+                if command == "Total_forward_active_energy":
+                    modbus_frame[command][0] = int(float_value * 1000)
+                    modbus_frame[command][1] = timestamp
+                elif command == "Total_reverse_active_energy":
+                    modbus_frame[command][0] = int(float_value * 1000)
+                    modbus_frame[command][1] = timestamp
+                else:
+                    modbus_frame[command] = float_value
+            update_frame()
+            # check_memory()
         elif state == 0:
             logging.info("FIRST_CYCLE_START - read_modbus_frame()")
-            # for command in ["L1_voltage", "L2_voltage", "L3_voltage", "L1_current", "L2_current", "L3_current",
-            #                 "L1_active_power", "L2_active_power", "L3_active_power",
-            #                 "Total_forward_active_energy", "Total_reverse_active_energy"]:
-            for command in ["L1_voltage", "L2_voltage", "L3_voltage", "L1_current", "L2_current", "L3_current",
+            check_memory()
+            for command in ["L1_voltage", "L2_voltage", "L3_voltage",
+                            "L1_current", "L2_current", "L3_current",
+                            "L1_active_power", "L2_active_power", "L3_active_power",
                             "Total_forward_active_energy", "Total_reverse_active_energy"]:
+
                 parameter = commands[command]
 
                 response = None
@@ -272,17 +244,19 @@ def read_modbus_frame():
                 else:
                     modbus_frame[command] = float_value
             state = 1
-        check_memory()
+            update_frame()
+        # check_memory()
+        utime.sleep(1)  # Dodajemy krótki sleep, aby zmniejszyć obciążenie CPU
 
 
 def check_memory():
     gc.collect()
     free_memory = gc.mem_free()
-    logging.info(f"FREE MEMORY: {free_memory}")
+    logging.info(f"FREE MEMORY:      {free_memory:>7}")
     allocated_memory = gc.mem_alloc()
-    logging.info(f"ALLOCATED MEMORY: {allocated_memory}")
+    logging.info(f"ALLOCATED MEMORY: {allocated_memory:>7}")
     total_memory = free_memory + allocated_memory
-    logging.info(f"TOTAL MEMORY: {total_memory}")
+    logging.info(f"TOTAL MEMORY:     {total_memory:>7}")
 
 
 def main():
@@ -290,27 +264,15 @@ def main():
     time.sleep(5)
     try:
         wifi_connect()
-        client = ArduinoCloudClient(device_id=DEVICE_ID, username=DEVICE_ID, password=CLOUD_PASSWORD)
+        client = ArduinoCloudClient(device_id=DEVICE_ID, username=DEVICE_ID, password=CLOUD_PASSWORD, sync_mode=False)
         _thread.start_new_thread(read_modbus_frame, ())
 
-        client.register("l1voltage", value=0.0, on_read=update_l1voltage, interval=30.0)
-        client.register("l2voltage", value=0.0, on_read=update_l2voltage, interval=30.0)
-        client.register("l3voltage", value=0.0, on_read=update_l3voltage, interval=30.0)
-
-        client.register("l1current", value=0.0, on_read=update_l1current, interval=30.0)
-        client.register("l2current", value=0.0, on_read=update_l2current, interval=30.0)
-        client.register("l3current", value=0.0, on_read=update_l3current, interval=30.0)
-
-        # client.register("l1power", value=0.0, on_read=update_l1power, interval=30.0)
-        # client.register("l2power", value=0.0, on_read=update_l2power, interval=30.0)
-        # client.register("l3power", value=0.0, on_read=update_l3power, interval=30.0)
-
+        client.register("grid_meter_frame", value="", on_read=update_frame_cloud, interval=30.0)
         client.register("energy_forward_diff", value=0, on_read=update_energy_forward_diff, interval=120)
         client.register("energy_reverse_diff", value=0, on_read=update_energy_reverse_diff, interval=120)
 
-        client.register("hard_reset", value=False, on_write=hard_reset)
-
         client.start()
+
     except Exception as e:
         logging.error(e)
         time.sleep(30)

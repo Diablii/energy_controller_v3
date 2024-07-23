@@ -9,7 +9,6 @@ import os
 sys.path.append("lib")
 
 
-# noinspection PyUnusedLocal
 class EnergyManager:
     load_dotenv()
 
@@ -23,6 +22,17 @@ class EnergyManager:
         self.state_of_grid_meter = 0
         self.energy_forward_diff = 0
         self.energy_reverse_diff = 0
+        self.grid_meter_frame = {
+            "L1_voltage": 0,
+            "L1_current": 0,
+            "L1_active_power": 0,
+            "L2_voltage": 0,
+            "L2_current": 0,
+            "L2_active_power": 0,
+            "L3_voltage": 0,
+            "L3_current": 0,
+            "L3_active_power": 0
+        }
         self.energy_balance = 0
         self.power_of_heaters = 0
         self.heaters = {
@@ -41,11 +51,41 @@ class EnergyManager:
     def setup_client(self):
         self.client.register("energy_forward_diff", value=None, on_write=self.read_energy_forward_diff)
         self.client.register("energy_reverse_diff", value=None, on_write=self.read_energy_reverse_diff)
+        self.client.register("grid_meter_frame", value=None, on_write=self.read_grid_meter_frame)
         # self.client.register("hard_reset", value=False, on_read=self.hard_reset_grid_meter, interval=30)
         self.client.register("energy_balance", value=0, on_read=self.write_energy_balance, interval=1)
         self.client.register("power_of_heaters", value=0, on_read=self.update_power_of_heaters, interval=1)
 
-    # noinspection PyUnusedLocal
+        self.client.register("l1_voltage", value=0.0, on_read=self.update_l1_voltage, interval=20)
+        self.client.register("l1_current", value=0.0, on_read=self.update_l1_current, interval=20)
+        self.client.register("l1_active_power", value=0.0, on_read=self.update_l1_power, interval=20)
+
+        self.client.register("l2_voltage", value=0.0, on_read=self.update_l2_voltage, interval=20)
+        self.client.register("l2_current", value=0.0, on_read=self.update_l2_current, interval=20)
+        self.client.register("l2_active_power", value=0.0, on_read=self.update_l2_power, interval=20)
+
+        self.client.register("l3_voltage", value=0.0, on_read=self.update_l3_voltage, interval=20)
+        self.client.register("l3_current", value=0.0, on_read=self.update_l3_current, interval=20)
+        self.client.register("l3_active_power", value=0.0, on_read=self.update_l3_power, interval=20)
+
+    @staticmethod
+    def parse_string_to_dict(input_string):  # create unit tests
+        result = {}
+
+        pairs = input_string.split(';')
+        for pair in pairs:
+            if pair:
+                key, value = pair.split(':')
+                if '1e-' in value:
+                    result[key] = 0.0
+                else:
+                    try:
+                        value = float(value)
+                    except ValueError:
+                        pass
+                    result[key] = value
+        return result
+
     def read_energy_forward_diff(self, client, value):
         self.energy_forward_diff = value
         self.value_validation['energy_balance_valid'] = True
@@ -55,6 +95,37 @@ class EnergyManager:
         self.energy_reverse_diff = value
         self.value_validation['energy_balance_valid'] = True
         logging.info(f"Value of energy_reverse_diff updated to: {self.energy_reverse_diff:>6}")
+
+    def update_l1_voltage(self, client):
+        return self.grid_meter_frame['L1_voltage']
+
+    def update_l1_current(self, client):
+        return self.grid_meter_frame['L1_current']
+
+    def update_l1_power(self, client):
+        return self.grid_meter_frame['L1_active_power']
+
+    def update_l2_voltage(self, client):
+        return self.grid_meter_frame['L2_voltage']
+
+    def update_l2_current(self, client):
+        return self.grid_meter_frame['L2_current']
+
+    def update_l2_power(self, client):
+        return self.grid_meter_frame['L2_active_power']
+
+    def update_l3_voltage(self, client):
+        return self.grid_meter_frame['L3_voltage']
+
+    def update_l3_current(self, client):
+        return self.grid_meter_frame['L3_current']
+
+    def update_l3_power(self, client):
+        return self.grid_meter_frame['L3_active_power']
+
+    def read_grid_meter_frame(self, client, value):
+        self.grid_meter_frame = self.parse_string_to_dict(value)
+        logging.debug(self.grid_meter_frame)
 
     def hard_reset_grid_meter(self, client):
         if self.state_of_grid_meter == 0:
@@ -88,7 +159,7 @@ class EnergyManager:
             self.value_validation['power_of_heaters_valid'] = False
             return self.power_of_heaters
 
-    def adjust_heaters(self, calculated_energy_balance):
+    def adjust_heaters(self, calculated_energy_balance):  # create unit tests
         energy_balance_local = calculated_energy_balance
         power_of_heaters_local = self.power_of_heaters
         logging.info(f"Start of adjust_heaters with parameters: {energy_balance_local:>6} {self.heaters}")
@@ -130,7 +201,7 @@ class EnergyManager:
                     energy_balance_local += 1000
                     self.heaters["heater_1000W"] = False
 
-                elif self.heaters["heater_500W"] and (energy_balance_local / -500) <= 1:
+                elif self.heaters["heater_500W"] and (energy_balance_local / -500) > 0:
                     energy_balance_local += 500
                     self.heaters["heater_500W"] = False
                 else:

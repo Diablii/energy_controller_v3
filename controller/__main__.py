@@ -1,22 +1,18 @@
-import logging
 import sys
 
-from arduino_iot_cloud import ArduinoCloudClient
+import logging
+import time
 
-from dotenv import load_dotenv
-import os
+from threading import Thread
+from arduino_iot_cloud import ArduinoCloudClient
 
 sys.path.append("lib")
 
 
+# noinspection PyUnusedLocal
 class EnergyManager:
-    load_dotenv()
-
-    device_id = os.getenv('DEVICE_ID')
-    secret_key = os.getenv('SECRET_KEY')
-
-    DEVICE_ID = device_id.encode('utf-8')
-    SECRET_KEY = secret_key.encode('utf-8')
+    DEVICE_ID = b"242186a1-15ce-4157-bfb3-81545e4ac2d5"
+    SECRET_KEY = b"anJxtmZnXeNRrlakm1yMd?gUL"
 
     def __init__(self):
         self.state_of_grid_meter = 0
@@ -41,8 +37,10 @@ class EnergyManager:
             "heater_500W": False
         }
         self.value_validation = {
+            "energy_read_valid": False,
             "energy_balance_valid": False,
-            "power_of_heaters_valid": False
+            "power_of_heaters_valid": False,
+            "grid_meter_frame_valid": False
         }
 
         self.client = ArduinoCloudClient(device_id=self.DEVICE_ID, username=self.DEVICE_ID, password=self.SECRET_KEY)
@@ -88,12 +86,12 @@ class EnergyManager:
 
     def read_energy_forward_diff(self, client, value):
         self.energy_forward_diff = value
-        self.value_validation['energy_balance_valid'] = True
+        self.value_validation['energy_read_valid'] = True
         logging.info(f"Value of energy_forward_diff updated to: {self.energy_forward_diff:>6}")
 
     def read_energy_reverse_diff(self, client, value):
         self.energy_reverse_diff = value
-        self.value_validation['energy_balance_valid'] = True
+        self.value_validation['energy_read_valid'] = True
         logging.info(f"Value of energy_reverse_diff updated to: {self.energy_reverse_diff:>6}")
 
     def update_l1_voltage(self, client):
@@ -125,6 +123,8 @@ class EnergyManager:
 
     def read_grid_meter_frame(self, client, value):
         self.grid_meter_frame = self.parse_string_to_dict(value)
+        # self.grid_meter_frame = value
+        # self.value_validation['grid_meter_frame_valid'] = True
         logging.debug(self.grid_meter_frame)
 
     def hard_reset_grid_meter(self, client):
@@ -135,11 +135,12 @@ class EnergyManager:
             return False
 
     def write_energy_balance(self, client):
-        if self.value_validation['energy_balance_valid']:
+        if self.value_validation['energy_read_valid']:
             if self.energy_reverse_diff >= 0 and self.energy_forward_diff >= 0:
                 self.energy_balance = int((self.energy_reverse_diff - self.energy_forward_diff) - self.power_of_heaters)
-                self.adjust_heaters(self.energy_balance)
-                self.update_power_of_heaters_total()
+                # self.adjust_heaters()
+                # self.update_power_of_heaters_total()
+                self.value_validation['energy_balance_valid'] = True
                 return self.energy_balance
             else:
                 return -1
@@ -159,8 +160,8 @@ class EnergyManager:
             self.value_validation['power_of_heaters_valid'] = False
             return self.power_of_heaters
 
-    def adjust_heaters(self, calculated_energy_balance):  # create unit tests
-        energy_balance_local = calculated_energy_balance
+    def adjust_heaters(self):  # create unit tests
+        energy_balance_local = self.energy_balance
         power_of_heaters_local = self.power_of_heaters
         logging.info(f"Start of adjust_heaters with parameters: {energy_balance_local:>6} {self.heaters}")
         if energy_balance_local >= 500 and self.value_validation['energy_balance_valid']:
@@ -218,10 +219,23 @@ class EnergyManager:
             elif self.energy_balance < 0 and all(value is False for value in self.heaters.values()):
                 self.value_validation['energy_balance_valid'] = False
             else:
-                self.adjust_heaters(self.energy_balance)
+                try:
+                    self.adjust_heaters()
+                except Exception as e:
+                    logging.warning(f"recursion fault{e}")
+        self.update_power_of_heaters_total()
         return 0
 
+    def energy_management(self):
+        while True:
+            if self.value_validation['energy_balance_valid']:
+                self.adjust_heaters()
+                time.sleep(30)
+
     def start(self):
+        # add thread for adjust_heaters
+        adjust_heaters_thread = Thread(target=self.energy_management)
+        adjust_heaters_thread.start()
         self.client.start()
 
 
@@ -233,3 +247,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

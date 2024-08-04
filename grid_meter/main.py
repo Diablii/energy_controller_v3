@@ -49,6 +49,10 @@ modbus_frame_old = {
     "Total_reverse_active_energy": [0, 0],
 }
 
+watchdog = {
+    "wdg_gridmeter_controller": False
+}
+
 diff_reverse_active_energy = 0
 diff_forward_active_energy = 0
 
@@ -214,9 +218,8 @@ def read_modbus_frame():
                     modbus_frame[command][0] = int(float_value * 1000)
                     modbus_frame[command][1] = timestamp
                 else:
-                    modbus_frame[command] = float_value
+                    modbus_frame[command] = round(float_value, 2)
             update_frame()
-            # check_memory()
         elif state == 0:
             logging.info("FIRST_CYCLE_START - read_modbus_frame()")
             check_memory()
@@ -242,11 +245,10 @@ def read_modbus_frame():
                     modbus_frame[command][0] = int(float_value * 1000)
                     modbus_frame[command][1] = timestamp
                 else:
-                    modbus_frame[command] = float_value
+                    modbus_frame[command] = round(float_value, 2)
             state = 1
             update_frame()
-        # check_memory()
-        utime.sleep(1)  # Dodajemy krótki sleep, aby zmniejszyć obciążenie CPU
+        utime.sleep(1)
 
 
 def check_memory():
@@ -257,6 +259,12 @@ def check_memory():
     logging.info(f"ALLOCATED MEMORY: {allocated_memory:>7}")
     total_memory = free_memory + allocated_memory
     logging.info(f"TOTAL MEMORY:     {total_memory:>7}")
+
+
+def refresh_watchdog(client):
+    global watchdog
+    watchdog['wdg_gridmeter_controller'] = not watchdog['wdg_gridmeter_controller']
+    return watchdog['wdg_gridmeter_controller']
 
 
 def main():
@@ -270,6 +278,8 @@ def main():
         client.register("grid_meter_frame", value="", on_read=update_frame_cloud, interval=30.0)
         client.register("energy_forward_diff", value=0, on_read=update_energy_forward_diff, interval=120)
         client.register("energy_reverse_diff", value=0, on_read=update_energy_reverse_diff, interval=120)
+
+        client.register("wdg_gridmeter_controller", value=False, on_read=refresh_watchdog, interval=1)
 
         client.start()
 

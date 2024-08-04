@@ -19,15 +19,15 @@ class EnergyManager:
         self.energy_forward_diff = 0
         self.energy_reverse_diff = 0
         self.grid_meter_frame = {
-            "L1_voltage": 0,
-            "L1_current": 0,
-            "L1_active_power": 0,
-            "L2_voltage": 0,
-            "L2_current": 0,
-            "L2_active_power": 0,
-            "L3_voltage": 0,
-            "L3_current": 0,
-            "L3_active_power": 0
+            "L1_voltage": 0.0,
+            "L1_current": 0.0,
+            "L1_active_power": 0.0,
+            "L2_voltage": 0.0,
+            "L2_current": 0.0,
+            "L2_active_power": 0.0,
+            "L3_voltage": 0.0,
+            "L3_current": 0.0,
+            "L3_active_power": 0.0
         }
         self.energy_balance = 0
         self.power_of_heaters = 0
@@ -42,6 +42,16 @@ class EnergyManager:
             "power_of_heaters_valid": False,
             "grid_meter_frame_valid": False
         }
+        self.watchdog = {
+            "wdg_controller_gridmeter": False,
+            "wdg_gridmeter_controller": False,
+            "wdg_gridmeter_controller_counter": 0,
+            "wdg_gridmeter_controller_counter_old": 0
+        }
+        self.devices = {
+            "gridmeter_alive": True,
+            "actuatorheaters_alive": True
+        }
 
         self.client = ArduinoCloudClient(device_id=self.DEVICE_ID, username=self.DEVICE_ID, password=self.SECRET_KEY)
         self.setup_client()
@@ -51,8 +61,8 @@ class EnergyManager:
         self.client.register("energy_reverse_diff", value=None, on_write=self.read_energy_reverse_diff)
         self.client.register("grid_meter_frame", value=None, on_write=self.read_grid_meter_frame)
         # self.client.register("hard_reset", value=False, on_read=self.hard_reset_grid_meter, interval=30)
-        self.client.register("energy_balance", value=0, on_read=self.write_energy_balance, interval=1)
-        self.client.register("power_of_heaters", value=0, on_read=self.update_power_of_heaters, interval=1)
+        self.client.register("energy_balance", value=0, on_read=self.write_energy_balance, interval=5)
+        self.client.register("power_of_heaters", value=0, on_read=self.update_power_of_heaters, interval=5)
 
         self.client.register("l1_voltage", value=0.0, on_read=self.update_l1_voltage, interval=20)
         self.client.register("l1_current", value=0.0, on_read=self.update_l1_current, interval=20)
@@ -66,23 +76,37 @@ class EnergyManager:
         self.client.register("l3_current", value=0.0, on_read=self.update_l3_current, interval=20)
         self.client.register("l3_active_power", value=0.0, on_read=self.update_l3_power, interval=20)
 
+        self.client.register("wdg_controller_gridmeter", value=False,
+                             on_read=self.update_wdg_controller_gridmeter, interval=1)
+        self.client.register("wdg_gridmeter_controller", value=False,
+                             on_write=self.check_wdg_gridmeter_controller)
+
     @staticmethod
     def parse_string_to_dict(input_string):  # create unit tests
         result = {}
-
+        logging.info(f"parse_string_to_dict -> (input_string) {input_string}")
         pairs = input_string.split(';')
         for pair in pairs:
             if pair:
                 key, value = pair.split(':')
-                if '1e-' in value:
+                if 'e' in value:
                     result[key] = 0.0
                 else:
                     try:
                         value = float(value)
-                    except ValueError:
-                        pass
+                    except Exception as e:
+                        logging.error(f"parsing error {e}")
                     result[key] = value
+        logging.info(f"parse_string_to_dict -> ( output_dict) {result}")
         return result
+
+    def update_wdg_controller_gridmeter(self, client):
+        self.watchdog['wdg_controller_gridmeter'] = not self.watchdog['wdg_controller_gridmeter']
+        return self.watchdog['wdg_controller_gridmeter']
+
+    def check_wdg_gridmeter_controller(self, client, value):
+        self.watchdog['wdg_gridmeter_controller'] = value
+        self.watchdog['wdg_gridmeter_controller_counter'] += 1
 
     def read_energy_forward_diff(self, client, value):
         self.energy_forward_diff = value
@@ -141,13 +165,15 @@ class EnergyManager:
                 # self.adjust_heaters()
                 # self.update_power_of_heaters_total()
                 self.value_validation['energy_balance_valid'] = True
+                self.value_validation['energy_read_valid'] = False
                 return self.energy_balance
             else:
                 return -1
 
     def update_power_of_heaters_total(self):
         total_power = 0
-        for heater, state in self.heaters.items():
+        heaters = self.heaters.copy()
+        for heater, state in heaters.items():
             if state:
                 power = int(heater.split('_')[1][:-1])
                 total_power += power
@@ -232,10 +258,28 @@ class EnergyManager:
                 self.adjust_heaters()
                 time.sleep(30)
 
+    def run_watchdog(self):
+        while True:
+            time.sleep(10)
+            if self.watchdog['wdg_gridmeter_controller_counter'] != self.watchdog['wdg_gridmeter_controller_counter_old']:
+                self.watchdog['wdg_gridmeter_controller_counter_old'] = self.watchdog['wdg_gridmeter_controller_counter']
+                self.devices['gridmeter_alive'] = True
+                logging.info(f"watchdog {self.devices['gridmeter_alive']}")
+            else:
+                self.devices['gridmeter_alive'] = False
+                logging.info(f"watchdog {self.devices['gridmeter_alive']}")
+
+            if self.watchdog['wdg_gridmeter_controller_counter'] > 150:
+                self.watchdog['wdg_gridmeter_controller_counter'] = 0
+                logging.info(f"watchdog gridmeter counter reset")
+
     def start(self):
         # add thread for adjust_heaters
         adjust_heaters_thread = Thread(target=self.energy_management)
         adjust_heaters_thread.start()
+        watchdog_gridmeter_thread = Thread(target=self.run_watchdog)
+        watchdog_gridmeter_thread.start()
+
         self.client.start()
 
 
@@ -247,4 +291,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

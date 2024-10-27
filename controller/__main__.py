@@ -257,11 +257,18 @@ class EnergyManager:
         return 0
 
     def run_energy_management(self):
-        while self.devices['gridmeter_alive']:
-            if self.value_validation['energy_balance_valid']:
-                self.adjust_heaters()
-                time.sleep(30)
-        logging.info(f"[ENERGY MANAGEMENT] GRIDMETER IS DEAD")
+        while True:
+            if self.devices['gridmeter_alive']:
+                logging.info(f"[ENERGY MANAGEMENT] GRIDMETER IS ALIVE")
+                if self.value_validation['energy_balance_valid']:
+                    logging.info(f"[ENERGY MANAGEMENT] ENERGY BALANCE VALUE IS VALID")
+                    self.adjust_heaters()
+                else:
+                    logging.info(f"[ENERGY MANAGEMENT] ENERGY BALANCE VALUE IS NOT VALID")
+            else:
+                logging.info(f"[ENERGY MANAGEMENT] GRIDMETER IS DEAD")
+            time.sleep(30)
+
 
     def run_watchdog(self):
         while True:

@@ -46,7 +46,8 @@ class EnergyManager:
             "wdg_controller_gridmeter": False,
             "wdg_gridmeter_controller": False,
             "wdg_gridmeter_controller_counter": 0,
-            "wdg_gridmeter_controller_counter_old": 0
+            "wdg_gridmeter_controller_counter_old": 0,
+            "wdg_gridmeter_controller_failed_counter": 0
         }
         self.devices = {
             "gridmeter_alive": True,
@@ -84,7 +85,7 @@ class EnergyManager:
     @staticmethod
     def parse_string_to_dict(input_string):  # create unit tests
         result = {}
-        logging.info(f"parse_string_to_dict -> (input_string) {input_string}")
+        logging.info(f"[GRIDMETER] parse_string_to_dict -> (input_string) {input_string}")
         pairs = input_string.split(';')
         for pair in pairs:
             if pair:
@@ -97,7 +98,7 @@ class EnergyManager:
                     except Exception as e:
                         logging.error(f"parsing error {e}")
                     result[key] = value
-        logging.info(f"parse_string_to_dict -> ( output_dict) {result}")
+        logging.info(f"[GRIDMETER] parse_string_to_dict -> ( output_dict) {result}")
         return result
 
     def update_wdg_controller_gridmeter(self, client):
@@ -111,12 +112,12 @@ class EnergyManager:
     def read_energy_forward_diff(self, client, value):
         self.energy_forward_diff = value
         self.value_validation['energy_read_valid'] = True
-        logging.info(f"Value of energy_forward_diff updated to: {self.energy_forward_diff:>6}")
+        logging.info(f"[GRIDMETER] Value of energy_forward_diff updated to: {self.energy_forward_diff:>6}")
 
     def read_energy_reverse_diff(self, client, value):
         self.energy_reverse_diff = value
         self.value_validation['energy_read_valid'] = True
-        logging.info(f"Value of energy_reverse_diff updated to: {self.energy_reverse_diff:>6}")
+        logging.info(f"[GRIDMETER] Value of energy_reverse_diff updated to: {self.energy_reverse_diff:>6}")
 
     def update_l1_voltage(self, client):
         return self.grid_meter_frame['L1_voltage']
@@ -146,10 +147,11 @@ class EnergyManager:
         return self.grid_meter_frame['L3_active_power']
 
     def read_grid_meter_frame(self, client, value):
-        self.grid_meter_frame = self.parse_string_to_dict(value)
-        # self.grid_meter_frame = value
-        # self.value_validation['grid_meter_frame_valid'] = True
-        logging.debug(self.grid_meter_frame)
+        if self.devices['gridmeter_alive']:
+            self.grid_meter_frame = self.parse_string_to_dict(value)
+            # self.grid_meter_frame = value
+            # self.value_validation['grid_meter_frame_valid'] = True
+            logging.debug(self.grid_meter_frame)
 
     def hard_reset_grid_meter(self, client):
         if self.state_of_grid_meter == 0:
@@ -189,7 +191,8 @@ class EnergyManager:
     def adjust_heaters(self):  # create unit tests
         energy_balance_local = self.energy_balance
         power_of_heaters_local = self.power_of_heaters
-        logging.info(f"Start of adjust_heaters with parameters: {energy_balance_local:>6} {self.heaters}")
+        logging.info(f"[ENERGY MANAGEMENT] Start of adjust_heaters with parameters: "
+                     f"{energy_balance_local:>6} {self.heaters}")
         if energy_balance_local >= 500 and self.value_validation['energy_balance_valid']:
             if ((energy_balance_local + power_of_heaters_local) / 2000) >= 1 and not self.heaters["heater_2000W"]:
                 energy_balance_local -= 2000
@@ -235,7 +238,8 @@ class EnergyManager:
                     break
 
         self.energy_balance = energy_balance_local
-        logging.info(f"End of adjust_heaters with parameters:   {energy_balance_local:>6} {self.heaters}")
+        logging.info(f"[ENERGY MANAGEMENT] End of adjust_heaters with parameters:   "
+                     f"{energy_balance_local:>6} {self.heaters}")
 
         if self.value_validation['energy_balance_valid']:
             if 0 <= self.energy_balance < 500:
@@ -252,30 +256,39 @@ class EnergyManager:
         self.update_power_of_heaters_total()
         return 0
 
-    def energy_management(self):
-        while True:
+    def run_energy_management(self):
+        while self.devices['gridmeter_alive']:
             if self.value_validation['energy_balance_valid']:
                 self.adjust_heaters()
                 time.sleep(30)
+        logging.info(f"[ENERGY MANAGEMENT] GRIDMETER IS DEAD")
 
     def run_watchdog(self):
         while True:
             time.sleep(10)
-            if self.watchdog['wdg_gridmeter_controller_counter'] != self.watchdog['wdg_gridmeter_controller_counter_old']:
-                self.watchdog['wdg_gridmeter_controller_counter_old'] = self.watchdog['wdg_gridmeter_controller_counter']
+            if self.watchdog['wdg_gridmeter_controller_counter'] \
+                    != self.watchdog['wdg_gridmeter_controller_counter_old']:
+                self.watchdog['wdg_gridmeter_controller_counter_old'] \
+                    = self.watchdog['wdg_gridmeter_controller_counter']
                 self.devices['gridmeter_alive'] = True
-                logging.info(f"watchdog {self.devices['gridmeter_alive']}")
+                logging.info(f"[WATCHDOG] GRIDMETER ALIVE: {self.devices['gridmeter_alive']}")
             else:
                 self.devices['gridmeter_alive'] = False
-                logging.info(f"watchdog {self.devices['gridmeter_alive']}")
-
+                logging.info(f"[WATCHDOG] GRIDMETER ALIVE: {self.devices['gridmeter_alive']}")
+                self.watchdog['wdg_gridmeter_controller_failed_counter'] += 1
             if self.watchdog['wdg_gridmeter_controller_counter'] > 150:
                 self.watchdog['wdg_gridmeter_controller_counter'] = 0
-                logging.info(f"watchdog gridmeter counter reset")
+                self.watchdog['wdg_gridmeter_controller_failed_counter'] = 0
+                logging.info(f"[WATCHDOG] GRIDMETER COUNTER RESET")
+            if self.watchdog['wdg_gridmeter_controller_failed_counter'] > 5:
+                for i in range(5):
+                    logging.info(f"[WATCHDOG] TRIGGER RESET, RESET IN {5 - i}")
+                    time.sleep(1)
+                sys.exit(1)
 
     def start(self):
         # add thread for adjust_heaters
-        adjust_heaters_thread = Thread(target=self.energy_management)
+        adjust_heaters_thread = Thread(target=self.run_energy_management)
         adjust_heaters_thread.start()
         watchdog_gridmeter_thread = Thread(target=self.run_watchdog)
         watchdog_gridmeter_thread.start()

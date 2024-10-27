@@ -50,7 +50,16 @@ modbus_frame_old = {
 }
 
 watchdog = {
-    "wdg_gridmeter_controller": False
+    "wdg_gridmeter_controller": False,
+    "wdg_controller_gridmeter": False,
+    "wdg_controller_gridmeter_counter": 0,
+    "wdg_controller_gridmeter_counter_old": 0,
+    "wdg_controller_gridmeter_failed_counter": 0
+}
+
+devices = {
+    "controller_alive": True,
+    "actuatorheaters_alive": True
 }
 
 diff_reverse_active_energy = 0
@@ -249,6 +258,7 @@ def read_modbus_frame():
             state = 1
             update_frame()
         utime.sleep(1)
+        run_watchdog()
 
 
 def check_memory():
@@ -261,10 +271,38 @@ def check_memory():
     logging.info(f"TOTAL MEMORY:     {total_memory:>7}")
 
 
-def refresh_watchdog(client):
+def update_wdg_gridmeter_controller(client):
     global watchdog
     watchdog['wdg_gridmeter_controller'] = not watchdog['wdg_gridmeter_controller']
     return watchdog['wdg_gridmeter_controller']
+
+
+def check_wdg_controller_gridmeter(client, value):
+    global watchdog
+    watchdog['wdg_controller_gridmeter'] = value
+    watchdog['wdg_controller_gridmeter_counter'] += 1
+
+
+def run_watchdog():
+    global watchdog
+    global devices
+    if watchdog['wdg_controller_gridmeter_counter'] != watchdog['wdg_controller_gridmeter_counter_old']:
+        watchdog['wdg_controller_gridmeter_counter_old'] = watchdog['wdg_controller_gridmeter_counter']
+        devices['controller_alive'] = True
+        logging.info(f"[WATCHDOG] CONTROLLER ALIVE: {devices['controller_alive']}")
+    else:
+        devices["controller_alive"] = False
+        logging.info(f"[WATCHDOG] CONTROLLER ALIVE: {devices['controller_alive']}")
+        watchdog['wdg_controller_gridmeter_failed_counter'] += 1
+    if watchdog['wdg_controller_gridmeter_counter'] > 150:
+        watchdog['wdg_controller_gridmeter_counter'] = 0
+        watchdog['wdg_controller_gridmeter_failed_counter'] = 0
+        logging.info(f"[WATCHDOG] CONTROLLER COUNTER RESET")
+    if watchdog['wdg_controller_gridmeter_failed_counter'] > 5:
+        for i in range(5):
+            logging.info(f"[WATCHDOG] TRIGGER RESET, RESET IN {5 - i}")
+            time.sleep(1)
+        machine.reset()
 
 
 def main():
@@ -279,7 +317,8 @@ def main():
         client.register("energy_forward_diff", value=0, on_read=update_energy_forward_diff, interval=120)
         client.register("energy_reverse_diff", value=0, on_read=update_energy_reverse_diff, interval=120)
 
-        client.register("wdg_gridmeter_controller", value=False, on_read=refresh_watchdog, interval=1)
+        client.register("wdg_gridmeter_controller", value=False, on_read=update_wdg_gridmeter_controller, interval=1)
+        client.register("wdg_controller_gridmeter", value=False, on_write=check_wdg_controller_gridmeter)
 
         client.start()
 

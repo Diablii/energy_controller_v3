@@ -204,7 +204,7 @@ def read_modbus_frame():
     global grid_meter_frame
     while True:
         if state == 1:
-            time.sleep(10)
+            time.sleep(25)
             logging.info("STANDARD CYCLE - read_modbus_frame()")
             check_memory()
             for command in ["L1_voltage", "L2_voltage", "L3_voltage",

@@ -1,8 +1,7 @@
 import sys
-
-import logging
 import time
 
+import logging
 from threading import Thread
 from arduino_iot_cloud import ArduinoCloudClient
 
@@ -13,8 +12,6 @@ sys.path.append("lib")
 
 
 class EnergyManager:
-    DEVICE_ID = b"242186a1-15ce-4157-bfb3-81545e4ac2d5"
-    SECRET_KEY = b"anJxtmZnXeNRrlakm1yMd?gUL"
 
     def __init__(self):
         self.state_of_grid_meter = 0
@@ -35,15 +32,11 @@ class EnergyManager:
         self.power_of_heaters = 0
         self.heaters = config.Heaters()
         self.validator = config.Validator()
-        # self.value_validation = {
-        #     "energy_read_valid": False,
-        #     "energy_balance_valid": False,
-        #     "power_of_heaters_valid": False,
-        #     "grid_meter_frame_valid": False
-        # }
+        self.constants = config.Constants()
         self.watchdog = watchdog.Watchdog()
         self.devices = watchdog.Devices()
-        self.client = ArduinoCloudClient(device_id=self.DEVICE_ID, username=self.DEVICE_ID, password=self.SECRET_KEY)
+        self.client = ArduinoCloudClient(device_id=self.constants.DEVICE_ID, username=self.constants.DEVICE_ID,
+                                         password=self.constants.SECRET_KEY)
         self.setup_client()
 
     def setup_client(self):
@@ -92,29 +85,21 @@ class EnergyManager:
 
     def update_wdg_controller_gridmeter(self, client):
         self.watchdog.wdg_int_ext = not self.watchdog.wdg_int_ext
-        # self.watchdog['wdg_controller_gridmeter'] = not self.watchdog['wdg_controller_gridmeter']
         return self.watchdog.wdg_int_ext
-        # return self.watchdog['wdg_controller_gridmeter']
 
     def check_wdg_gridmeter_controller(self, client, value):
         self.watchdog.wdg_ext_int = value
-        # self.watchdog['wdg_gridmeter_controller'] = value
         self.watchdog.wdg_ext_int_timestamp = time.time()
-        # self.watchdog['wdg_gridmeter_controller_timestamp'] = time.time()
-        # print(self.watchdog['wdg_gridmeter_controller_timestamp'])
         self.watchdog.wdg_ext_int_counter += 1
-        # self.watchdog['wdg_gridmeter_controller_counter'] += 1
 
     def read_energy_forward_diff(self, client, value):
         self.energy_forward_diff = value
         self.validator.energy_read = True
-        # self.value_validation['energy_read_valid'] = True
         logging.info(f"[GRIDMETER] Value of energy_forward_diff updated to: {self.energy_forward_diff:>6}")
 
     def read_energy_reverse_diff(self, client, value):
         self.energy_reverse_diff = value
         self.validator.energy_read = True
-        # self.value_validation['energy_read_valid'] = True
         logging.info(f"[GRIDMETER] Value of energy_reverse_diff updated to: {self.energy_reverse_diff:>6}")
 
     def update_l1_voltage(self, client):
@@ -160,8 +145,6 @@ class EnergyManager:
         if self.validator.energy_read:
             if self.energy_reverse_diff >= 0 and self.energy_forward_diff >= 0:
                 self.energy_balance = int((self.energy_reverse_diff - self.energy_forward_diff) - self.power_of_heaters)
-                # self.adjust_heaters()
-                # self.update_power_of_heaters_total()
                 self.validator.energy_balance = True
                 self.validator.energy_read = False
                 return self.energy_balance
@@ -181,87 +164,91 @@ class EnergyManager:
                 total_power += power
         self.power_of_heaters = total_power
         self.validator.power_of_heaters = True
-        # self.value_validation['power_of_heaters_valid'] = True
 
     def update_power_of_heaters(self, client):
-        # logging.info(f"update_power_of_heaters {self.power_of_heaters}")
         if self.validator.power_of_heaters:
             self.validator.power_of_heaters = False
-        # if self.value_validation['power_of_heaters_valid']:
-        #     self.value_validation['power_of_heaters_valid'] = False
             return self.power_of_heaters
 
     def adjust_heaters(self):  # create unit tests
+        # Set local variables
         energy_balance_local = self.energy_balance
         power_of_heaters_local = self.power_of_heaters
+
         logging.info(f"[ENERGY MANAGEMENT] Start of adjust_heaters with parameters: "
                      f"{energy_balance_local:>6} "
                      f"| HEATER_500W: {self.heaters.heater_500W} | "
                      f"HEATER_1000W: {self.heaters.heater_1000W} | "
                      f"HEATER_2000W: {self.heaters.heater_2000W} |")
-        if energy_balance_local >= 500 and self.validator.energy_balance:
-            if ((energy_balance_local + power_of_heaters_local) / 2000) >= 1 and not self.heaters.heater_2000W:
-                energy_balance_local -= 2000
-                power_of_heaters_local += 2000
-                self.heaters.heater_2000W = True
-            if ((energy_balance_local + power_of_heaters_local) / 1000) >= 1 and not self.heaters.heater_1000W:
-                energy_balance_local -= 1000
-                power_of_heaters_local += 1000
-                self.heaters.heater_1000W = True
-            if ((energy_balance_local + power_of_heaters_local) / 500) >= 1 and not self.heaters.heater_500W:
-                energy_balance_local -= 500
-                power_of_heaters_local += 500
-                self.heaters.heater_500W = True
 
-        if energy_balance_local < 0 and self.validator.energy_balance:
-            while energy_balance_local < 0:
-                if self.heaters.heater_2000W and (energy_balance_local / -2000) > 0.75:
-                    energy_balance_local += 2000
-                    self.heaters.heater_2000W = False
-                elif self.heaters.heater_2000W and 0.25 < (energy_balance_local / -2000) <= 0.75\
-                        and not self.heaters.heater_1000W:
-                    energy_balance_local += 2000
-                    self.heaters.heater_2000W = False
-                elif self.heaters.heater_2000W and 0 < (energy_balance_local / -2000) <= 0.25\
-                        and not self.heaters.heater_500W:
-                    energy_balance_local += 2000
-                    self.heaters.heater_2000W = False
+        # Heater activation
+        energy_balance_local, power_of_heaters_local = self.activate_heaters(
+            energy_balance_local, power_of_heaters_local)
 
-                elif self.heaters.heater_1000W and (energy_balance_local / -1000) > 0.5:
-                    energy_balance_local += 1000
-                    self.heaters.heater_1000W = False
-                elif self.heaters.heater_1000W and 0 < (energy_balance_local / -1000) <= 0.5 \
-                        and not self.heaters.heater_500W:
-                    energy_balance_local += 1000
-                    self.heaters.heater_1000W = False
+        # Heater deactivation
+        energy_balance_local = self.deactivate_heaters(energy_balance_local)
 
-                elif self.heaters.heater_500W and (energy_balance_local / -500) > 0:
-                    energy_balance_local += 500
-                    self.heaters.heater_500W = False
-                else:
-                    break
-
+        # Update energy_balance and log
         self.energy_balance = energy_balance_local
         logging.info(f"[ENERGY MANAGEMENT] End of adjust_heaters with parameters:   "
                      f"{energy_balance_local:>6} "
                      f"| HEATER_500W: {self.heaters.heater_500W} | "
                      f"HEATER_1000W: {self.heaters.heater_1000W} | "
                      f"HEATER_2000W: {self.heaters.heater_2000W} |")
+
+        # Energy balance validation
+        self.validate_energy_balance()
+
+        # Update total heater power
+        self.update_power_of_heaters_total()
+
+        return 0
+
+    def activate_heaters(self, energy_balance_local, power_of_heaters_local):
+        """Heater activation logic."""
+        if energy_balance_local >= 500 and self.validator.energy_balance:
+            if ((energy_balance_local + power_of_heaters_local) / 2000) >= 1 and not self.heaters.heater_2000W:
+                energy_balance_local -= self.constants.HEATER_2000W_POWER
+                power_of_heaters_local += self.constants.HEATER_2000W_POWER
+                self.heaters.heater_2000W = True
+            if (((energy_balance_local + power_of_heaters_local) / self.constants.HEATER_1000W_POWER) >= 1 and not
+                    self.heaters.heater_1000W):
+                energy_balance_local -= self.constants.HEATER_1000W_POWER
+                power_of_heaters_local += self.constants.HEATER_1000W_POWER
+                self.heaters.heater_1000W = True
+            if (((energy_balance_local + power_of_heaters_local) / self.constants.HEATER_500W_POWER) >= 1 and not
+                    self.heaters.heater_500W):
+                energy_balance_local -= self.constants.HEATER_500W_POWER
+                power_of_heaters_local += self.constants.HEATER_500W_POWER
+                self.heaters.heater_500W = True
+        return energy_balance_local, power_of_heaters_local
+
+    def deactivate_heaters(self, energy_balance_local):
+        """Heater deactivation logic in loop to avoid recursion."""
+        while energy_balance_local < 0 and self.validator.energy_balance:
+            if self.heaters.heater_2000W and (energy_balance_local / -self.constants.HEATER_2000W_POWER) > 0.75:
+                energy_balance_local += self.constants.HEATER_2000W_POWER
+                self.heaters.heater_2000W = False
+            elif self.heaters.heater_1000W and (energy_balance_local / -self.constants.HEATER_1000W_POWER) > 0.5:
+                energy_balance_local += self.constants.HEATER_1000W_POWER
+                self.heaters.heater_1000W = False
+            elif self.heaters.heater_500W and (energy_balance_local / -self.constants.HEATER_500W_POWER) > 0:
+                energy_balance_local += self.constants.HEATER_500W_POWER
+                self.heaters.heater_500W = False
+            else:
+                break
+        return energy_balance_local
+
+    def validate_energy_balance(self):
+        """Checks if energy is balanced and sets validation flag."""
         heaters = [self.heaters.heater_2000W, self.heaters.heater_1000W, self.heaters.heater_500W]
         if self.validator.energy_balance:
-            if 0 <= self.energy_balance < 500:
+            if 0 <= self.energy_balance < self.constants.HEATER_500W_POWER:
                 self.validator.energy_balance = False
-            elif self.energy_balance >= 500 and all(value is True for value in heaters):
+            elif self.energy_balance >= self.constants.HEATER_500W_POWER and all(heaters):
                 self.validator.energy_balance = False
-            elif self.energy_balance < 0 and all(value is False for value in heaters):
+            elif self.energy_balance < 0 and not any(heaters):
                 self.validator.energy_balance = False
-            else:
-                try:
-                    self.adjust_heaters()
-                except Exception as e:
-                    logging.warning(f"recursion fault{e}")
-        self.update_power_of_heaters_total()
-        return 0
 
     def run_energy_management(self):
         while True:

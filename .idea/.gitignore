@@ -3,4 +3,14 @@
 /workspace.xml
 *.pyc
 __pycache__/
-git
+.env
+.vs/
+controller/__pycache__/
+controller/services/__pycache__/
+controller/settings/__pycache__/
+debug/main.py
+debug/uart_log.txt
+grid_meter/__pycache__/
+grid_meter/temp.py
+uart_log.txt
+venv/

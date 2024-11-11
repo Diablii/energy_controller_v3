@@ -91,6 +91,7 @@ class EnergyManager:
         self.watchdog.wdg_ext_int = value
         self.watchdog.wdg_ext_int_timestamp = time.time()
         self.watchdog.wdg_ext_int_counter += 1
+        self.devices.gridmeter_alive = True
 
     def read_energy_forward_diff(self, client, value):
         self.energy_forward_diff = value

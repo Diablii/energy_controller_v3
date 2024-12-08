@@ -14,3 +14,5 @@ grid_meter/__pycache__/
 grid_meter/temp.py
 uart_log.txt
 venv/
+settings/secrets.py
+grid_meter/secrets.py

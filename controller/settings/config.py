@@ -20,8 +20,6 @@ class Validator:
 
 class Constants:
     def __init__(self):
-        self.DEVICE_ID = b"242186a1-15ce-4157-bfb3-81545e4ac2d5"
-        self.SECRET_KEY = b"anJxtmZnXeNRrlakm1yMd?gUL"
         self.HEATER_2000W_POWER = 2000
         self.HEATER_1000W_POWER = 1000
         self.HEATER_500W_POWER = 500

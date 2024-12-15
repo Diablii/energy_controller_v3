@@ -21,7 +21,7 @@ commands = {
     "L2_active_power": [32, 1],
     "L3_active_power": [34, 1],
     "Total_forward_active_energy": [264, 2],
-    "Total_reverse_active_energy": [272, 2],
+    "Total_reverse_active_energy": [272, 2]
 }
 
 NUM_UART = 0x0
@@ -41,12 +41,12 @@ modbus_frame = {
     "L2_active_power": 0,
     "L3_active_power": 0,
     "Total_forward_active_energy": [0, 0],
-    "Total_reverse_active_energy": [0, 0],
+    "Total_reverse_active_energy": [0, 0]
 }
 
 modbus_frame_old = {
     "Total_forward_active_energy": [0, 0],
-    "Total_reverse_active_energy": [0, 0],
+    "Total_reverse_active_energy": [0, 0]
 }
 
 watchdog = {
@@ -184,7 +184,7 @@ def update_energy_forward_diff(client):
         modbus_frame_old[command] = modbus_frame[command].copy()
         logging.info(
             f"diff_forward_energy: {diff_forward_active_energy:>5} | {old_value:>10} | {new_value:>10} | {diff_time:>5}")
-        if 0 <= diff_forward_active_energy <= 15000:
+        if 0 <= diff_forward_active_energy <= 12000:
             return diff_forward_active_energy
         else:
             return 0

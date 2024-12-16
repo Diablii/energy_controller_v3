@@ -15,7 +15,7 @@ class Watchdog:
         self.wdg_ext_int_counter_old = 0
         self.wdg_ext_int_failed_counter = 0
 
-    def run_watchdog(self, devices, interval=10, max_failures=5):
+    def run_watchdog(self, devices, interval=10, max_failures=5, testing_mode=0):
         """Method which start the watchdog for checking status of external device"""
         # TODO handle the different type of device base on args in function, potential two other instances
         while True:
@@ -29,6 +29,11 @@ class Watchdog:
 
             if self.wdg_ext_int_counter > 150:
                 self._reset_watchdog_counters()
+                if testing_mode:
+                    break
+            if testing_mode:
+                self.wdg_ext_int_counter += 1
+                time.sleep(0.1)
 
     def _is_watchdog_alive(self):
         """Auxiliary method: check that watchdog is alive"""
@@ -48,10 +53,10 @@ class Watchdog:
         self.wdg_ext_int_failed_counter += 1
 
         if self.wdg_ext_int_failed_counter > max_failures:
-            self._trigger_reset(max_failures)
+            Watchdog._trigger_reset(max_failures)
 
     @staticmethod
-    def _trigger_reset(self, max_failures):
+    def _trigger_reset(max_failures):
         """Auxiliary method: counting time to reset of external device"""
         for i in range(max_failures, 0, -1):
             logging.info(f"[WATCHDOG] TRIGGER RESET, RESET IN {i}")

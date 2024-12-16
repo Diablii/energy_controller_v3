@@ -62,7 +62,7 @@ class EnergyManager:
         self.client.register("energy_reverse_diff", value=None, on_write=self.read_energy_reverse_diff)
         self.client.register("grid_meter_frame", value=None, on_write=self.read_grid_meter_frame)
         # self.client.register("hard_reset", value=False, on_read=self.hard_reset_grid_meter, interval=30)
-        self.client.register("energy_balance", value=0, on_read=self.write_energy_balance, interval=5)
+        self.client.register("energy_balance", value=0, on_read=self.update_energy_balance, interval=5)
         self.client.register("power_of_heaters", value=0, on_read=self.update_power_of_heaters, interval=5)
 
         self.client.register("l1_voltage", value=0.0, on_read=self.update_l1_voltage, interval=20)
@@ -168,7 +168,7 @@ class EnergyManager:
         else:
             return False
 
-    def write_energy_balance(self, client):
+    def update_energy_balance(self, client):
         if self.validator.energy_read:
             if self.energy_reverse_diff >= 0 and self.energy_forward_diff >= 0:
                 # self.energy_balance = int(self.energy_reverse_diff - self.energy_forward_diff)  # in case real heaters
@@ -198,8 +198,8 @@ class EnergyManager:
             self.validator.power_of_heaters = False
             return self.power_of_heaters
 
-    def adjust_heaters(self):  # create unit tests
-        # Set local variables
+    def adjust_heaters(self):  # TODO create unit tests
+        """Heaters adjust used for proper turning on heaters and tweak to current production of energy"""
         energy_balance_local = self.energy_balance
         power_of_heaters_local = self.power_of_heaters
 
@@ -209,14 +209,11 @@ class EnergyManager:
                      f"HEATER_1000W: {self.heaters.heater_1000W} | "
                      f"HEATER_2000W: {self.heaters.heater_2000W} |")
 
-        # Heater activation
         energy_balance_local, power_of_heaters_local = self.activate_heaters(
             energy_balance_local, power_of_heaters_local)
 
-        # Heater deactivation
         energy_balance_local = self.deactivate_heaters(energy_balance_local)
 
-        # Update energy_balance and log
         self.energy_balance = energy_balance_local
         logging.info(f"[ENERGY MANAGEMENT] End of adjust_heaters with parameters:   "
                      f"{energy_balance_local:>6} "
@@ -224,10 +221,8 @@ class EnergyManager:
                      f"HEATER_1000W: {self.heaters.heater_1000W} | "
                      f"HEATER_2000W: {self.heaters.heater_2000W} |")
 
-        # Energy balance validation
         self.validate_energy_balance()
 
-        # Update total heater power
         self.update_power_of_heaters_total()
 
         return 0
@@ -292,11 +287,9 @@ class EnergyManager:
             time.sleep(30)
 
     def start(self):
-        # add thread for adjust_heaters
         adjust_heaters_thread = Thread(target=self.run_energy_management)
         adjust_heaters_thread.start()
         watchdog_gridmeter_thread = Thread(target=self.watchdog.run_watchdog, args=(self.devices,))
         watchdog_gridmeter_thread.start()
 
         self.client.start()
-        # watchdog_gridmeter_thread.start()

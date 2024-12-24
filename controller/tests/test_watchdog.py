@@ -1,6 +1,5 @@
 import pytest
 import time
-from threading import Thread
 from unittest.mock import MagicMock, patch
 from controller.services.watchdog import Watchdog, Devices
 
@@ -15,8 +14,8 @@ def devices():
     return Devices()
 
 
-def test_is_watchdog_alive(watchdog):
-    # Test gdy watchdog jest aktywny
+def test_is_watchdog_alive_positive(watchdog):
+    # positive test case, when watchdog is active
     watchdog.wdg_ext_int_counter = 10
     watchdog.wdg_ext_int_counter_old = 5
     watchdog.wdg_ext_int_timestamp = 20.0
@@ -24,7 +23,9 @@ def test_is_watchdog_alive(watchdog):
 
     assert watchdog._is_watchdog_alive()
 
-    # Test gdy watchdog nie jest aktywny
+
+def test_is_watchdog_alive_negative(watchdog):
+    # negative test case, when watchdog is inactive
     watchdog.wdg_ext_int_counter = 5
     watchdog.wdg_ext_int_counter_old = 5
     watchdog.wdg_ext_int_timestamp = 15.0
@@ -77,48 +78,39 @@ def test_reset_watchdog_counters(watchdog):
     assert watchdog.wdg_ext_int_failed_counter == 0
 
 
-# Funkcja do mockowania _is_watchdog_alive
-# Funkcja do mockowania _is_watchdog_alive
-def side_effect_is_alive():
-    """Symuluje działanie funkcji _is_watchdog_alive."""
-    return [True, False]  # Lista stanów: najpierw True, potem False
-
 def simulate_watchdog_counter(watchdog):
     while True:
         watchdog.wdg_ext_int_counter += 1
         time.sleep(0.1)
 
-# @patch("time.sleep", return_value=None)
-# # @patch("if self.wdg_ext_int_counter > 150:", side_effect=SystemExit)
-# @patch("sys.exit", side_effect=SystemExit)  # Mockujemy sys.exit, aby podnieść SystemExit
-def test_run_watchdog():
-    # Utwórz instancję watchdog
-    watchdog = Watchdog()  # Zakładamy, że klasa jest już zaimportowana
-    devices = MagicMock()  # Mock obiektu devices
-    devices.gridmeter_alive = True  # Przykładowy stan początkowy
 
-    # Mockowanie zależności
+def test_run_watchdog():
+    watchdog = Watchdog()
+    devices = MagicMock()
+    devices.gridmeter_alive = True
+
+    # mocks of dependencies
     mock_is_alive = patch.object(watchdog, "_is_watchdog_alive", return_value=True).start()
     mock_reset_state = patch.object(watchdog, "_reset_watchdog_state").start()
     mock_handle_failure = patch.object(watchdog, "_handle_watchdog_failure").start()
     mock_reset_counters = patch.object(watchdog, "_reset_watchdog_counters").start()
 
-    # Inicjalizacja początkowego stanu
+    # initialization of start conditions
     watchdog.wdg_ext_int_counter = 0
 
-    # Wywołanie metody w trybie testowym
+    # call of method in testing mode (incrementation of watchdog counter builtin method)
     watchdog.run_watchdog(devices, interval=0.1, max_failures=3, testing_mode=1)
 
-    # Sprawdzenie, czy licznik został zaktualizowany w trybie testowym
-    assert watchdog.wdg_ext_int_counter > 0, "Licznik nie został zaktualizowany"
+    # checking incrementation of counter in testing mode
+    assert watchdog.wdg_ext_int_counter > 0, "Counter didn't incremented"
 
-    # Sprawdzenie, czy zostały wywołane odpowiednie metody
+    # checking that proper methods were called
     mock_reset_state.assert_called()
     mock_is_alive.assert_called()
     mock_reset_counters.assert_called()
 
-    # Oczekujemy, że `testing_mode` kończy pętlę
-    assert watchdog.wdg_ext_int_counter == 151, "Pętla nie zakończyła się na czas"
+    # check if the counter was incremented to limit and reset
+    assert watchdog.wdg_ext_int_counter == 151, "while loop BROKEN"
 
-    # Zatrzymanie patchowania
+    # stop of patch on the watchdog methods
     patch.stopall()

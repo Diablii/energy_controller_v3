@@ -23,5 +23,3 @@ class Constants:
         self.HEATER_2000W_POWER = 2000
         self.HEATER_1000W_POWER = 1000
         self.HEATER_500W_POWER = 500
-
-

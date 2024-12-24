@@ -2,7 +2,6 @@ import sys
 import time
 
 import logging
-from threading import Thread
 from arduino_iot_cloud import ArduinoCloudClient
 
 from services import watchdog
@@ -285,11 +284,3 @@ class EnergyManager:
             else:
                 logging.info(f"[ENERGY MANAGEMENT] GRIDMETER IS DEAD")
             time.sleep(30)
-
-    def start(self):
-        adjust_heaters_thread = Thread(target=self.run_energy_management)
-        adjust_heaters_thread.start()
-        watchdog_gridmeter_thread = Thread(target=self.watchdog.run_watchdog, args=(self.devices,))
-        watchdog_gridmeter_thread.start()
-
-        self.client.start()

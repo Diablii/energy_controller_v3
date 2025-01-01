@@ -248,17 +248,41 @@ class EnergyManager:
     def deactivate_heaters(self, energy_balance_local):
         """Heater deactivation logic in loop to avoid recursion."""
         while energy_balance_local < 0 and self.validator.energy_balance:
-            if self.heaters.heater_2000W and (energy_balance_local / -self.constants.HEATER_2000W_POWER) > 0.75:
-                energy_balance_local += self.constants.HEATER_2000W_POWER
-                self.heaters.heater_2000W = False
-            elif self.heaters.heater_1000W and (energy_balance_local / -self.constants.HEATER_1000W_POWER) > 0.5:
-                energy_balance_local += self.constants.HEATER_1000W_POWER
-                self.heaters.heater_1000W = False
-            elif self.heaters.heater_500W and (energy_balance_local / -self.constants.HEATER_500W_POWER) > 0:
-                energy_balance_local += self.constants.HEATER_500W_POWER
-                self.heaters.heater_500W = False
-            else:
-                break
+            # HEATER 2000W
+            if self.heaters.heater_2000W:
+                if (energy_balance_local / -self.constants.HEATER_2000W_POWER) > 0.75:
+                    energy_balance_local += self.constants.HEATER_2000W_POWER
+                    self.heaters.heater_2000W = False
+                    continue
+                elif 0.25 < (energy_balance_local / -self.constants.HEATER_2000W_POWER) <= 0.75 \
+                        and not self.heaters.heater_1000W:
+                    energy_balance_local += self.constants.HEATER_2000W_POWER
+                    self.heaters.heater_2000W = False
+                    continue
+                elif 0 < (energy_balance_local / -self.constants.HEATER_2000W_POWER) <= 0.25 \
+                        and not self.heaters.heater_500W:
+                    energy_balance_local += self.constants.HEATER_2000W_POWER
+                    self.heaters.heater_2000W = False
+                    continue
+            # HEATER 1000W
+            if self.heaters.heater_1000W:
+                if (energy_balance_local / -self.constants.HEATER_1000W_POWER) > 0.5:
+                    energy_balance_local += self.constants.HEATER_1000W_POWER
+                    self.heaters.heater_1000W = False
+                    continue
+                elif 0 < (energy_balance_local / -self.constants.HEATER_1000W_POWER) <= 0.5 \
+                        and not self.heaters.heater_500W:
+                    energy_balance_local += self.constants.HEATER_1000W_POWER
+                    self.heaters.heater_1000W = False
+                    continue
+            # HEATER 500W
+            if self.heaters.heater_500W:
+                if (energy_balance_local / -self.constants.HEATER_500W_POWER) > 0:
+                    energy_balance_local += self.constants.HEATER_500W_POWER
+                    self.heaters.heater_500W = False
+                    continue
+            break
+
         return energy_balance_local
 
     def validate_energy_balance(self):

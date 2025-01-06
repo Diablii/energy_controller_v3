@@ -1,6 +1,7 @@
 import sys
 
 import logging
+import time
 from threading import Thread
 
 from energy_manager import EnergyManager
@@ -17,7 +18,10 @@ def main():
     watchdog_gridmeter_thread = Thread(target=energy_manager.watchdog.run_watchdog, args=(energy_manager.devices,))
     watchdog_gridmeter_thread.start()
 
-    energy_manager.client.start()
+    # energy_manager.client.start()
+    client_start = Thread(target=energy_manager.client.start)
+    client_start.start()
+
 
 
 if __name__ == "__main__":

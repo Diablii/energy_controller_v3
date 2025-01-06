@@ -2,12 +2,14 @@ import time
 import logging
 import utime
 import struct
+import gc
 
 from machine import UART, Pin
 
 
 class Modbus:
     def __init__(self):
+        self.uart = UART(0, buadrate=9600, bits=8, parity=0, stop=1, tx=Pin(0), rx=Pin(1))
         self.commands = {
             "L1_voltage": [14, 1],
             "L2_voltage": [16, 1],
@@ -40,7 +42,17 @@ class Modbus:
         }
         self.grid_meter_frame = ""
 
-    def modbus_read(self, uart, slave_addr=0, register_addr=0x0, num_registers=0x01, function_code=0x03):
+    def modbus_read(self, uart, slave_addr=0, register_addr=0x0, num_registers=0x01, function_code=0x03, timeout=5):
+        """
+
+        :param uart:
+        :param slave_addr:
+        :param register_addr:
+        :param num_registers:
+        :param function_code:
+        :param timeout:
+        :return:
+        """
         request = bytearray([slave_addr, function_code,
                              (register_addr >> 8) & 0xFF,
                              register_addr & 0xFF,
@@ -48,19 +60,90 @@ class Modbus:
                              num_registers & 0xFF])
         crc = self.calculate_crc(request)
         request.extend(crc)
-        isResponse = False
+
+        start_time = time.time()
         response = bytes()
-        while not isResponse:
+
+        while time.time() - start_time < timeout:
             uart.write(request)
-            time.sleep(0.5)
+            time.sleep(0.1)
             if uart.any():
                 response = uart.read()
-                if response:
-                    isResponse = True
-        return response
+                if response and self.validate_crc(response):  # TODO validation of CRC from reading data
+                    return response
+        raise TimeoutError("No valid response from Modbus slave within timeout")
+
+    def modbus_read_frame(self) -> None:
+        """
+
+        :return:
+        """
+        state = 0
+        while True:
+            if state == 1:
+                time.sleep(25)
+                logging.info("STANDARD CYCLE - read_modbus_frame()")
+            elif state == 0:
+                logging.info("FIRST_CYCLE_START - read_modbus_frame()")
+                state = 1
+            self.check_memory()  # TODO implement
+            for command, parameter in self.commands.items():
+                response = None
+                while not response:
+                    response = self.modbus_read(uart,
+                                                slave_addr=1,
+                                                register_addr=parameter[0],
+                                                num_registers=parameter[1],
+                                                function_code=3)
+                    utime.sleep(0.1)
+
+                value = self.convert_modbus_data(response)
+                timestamp = utime.time()
+                if command == "Total_forward_active_energy":
+                    self.modbus_frame[command][0] = int(value * 1000)
+                    self.modbus_frame[command][1] = timestamp
+                elif command == "Total_reverse_active_energy":
+                    self.modbus_frame[command][0] = int(value * 1000)
+                    self.modbus_frame[command][1] = timestamp
+                else:
+                    self.modbus_frame[command] = round(value, 2)
+            self.update_frame()
 
     @staticmethod
-    def calculate_crc(self, request_to_crc: bytes) -> bytes:
+    def convert_modbus_data(response):
+        """
+        :param response:
+        :return:
+        """
+        data = int.from_bytes(response[3:7], 'big')
+        float_value = struct.unpack('>f', struct.pack('>I', data))[0]
+        return float_value
+
+    def update_frame(self):
+        pass
+
+    def validate_crc(self, response: bytes) -> bool:
+        """
+        :param response:
+        :return:
+        """
+        if len(response) < 3:
+            return False
+
+        data_without_crc = response[:-2]
+        received_crc = response[-2:]
+
+        calculated_crc = self.calculate_crc(data_without_crc)
+
+        return received_crc == calculated_crc
+
+    @staticmethod
+    def calculate_crc(request_to_crc: bytes) -> bytes:
+        """
+
+        :param request_to_crc:
+        :return:
+        """
         crc = 0xFFFF
         for i in request_to_crc:
             crc ^= i
@@ -72,37 +155,15 @@ class Modbus:
                     crc >>= 1
         return crc.to_bytes(2, "little")
 
-    def modbus_read_frame(self):
-        uart = UART(0, buadrate=9600, bits=8, parity=0, stop=1, tx=Pin(0), rx=Pin(1))
-        state = 0
-
-        while True:
-            if state == 1:
-                time.sleep(25)
-                logging.info("STANDARD CYCLE - read_modbus_frame()")
-            elif state == 0:
-                logging.info("FIRST_CYCLE_START - read_modbus_frame()")
-                state = 1
-            # self.check_memory()  # TODO implement
-            for command, parameter in self.commands.items():
-                response = None
-                while not response:
-                    response = self.modbus_read(uart, slave_addr=1, register_addr=parameter[0],
-                                                num_registers=parameter[1], function_code=3)
-                    utime.sleep(0.1)
-                data = int.from_bytes(response[3:7], 'big')
-                float_value = struct.unpack('>f', struct.pack('>I', data))[0]
-                timestamp = utime.time()
-                if command == "Total_forward_active_energy":
-                    self.modbus_frame[command][0] = int(float_value * 1000)
-                    self.modbus_frame[command][1] = timestamp
-                elif command == "Total_reverse_active_energy":
-                    self.modbus_frame[command][0] = int(float_value * 1000)
-                    self.modbus_frame[command][1] = timestamp
-                else:
-                    self.modbus_frame[command] = round(float_value, 2)
-            self.update_frame()
-
-
-    def update_frame(self):
-        pass
+    @staticmethod
+    def check_memory():
+        """
+        :return:
+        """
+        gc.collect()
+        free_memory = gc.mem_free()
+        logging.info(f"FREE MEMORY:      {free_memory:>7}")
+        allocated_memory = gc.mem_alloc()
+        logging.info(f"ALLOCATED MEMORY: {allocated_memory:>7}")
+        total_memory = free_memory + allocated_memory
+        logging.info(f"TOTAL MEMORY:     {total_memory:>7}")

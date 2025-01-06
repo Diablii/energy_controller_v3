@@ -44,7 +44,9 @@ class Modbus:
 
     def modbus_read(self, uart, slave_addr=0, register_addr=0x0, num_registers=0x01, function_code=0x03, timeout=5):
         """
-
+        | Address device | Function code | Data      | CRC-16  |
+        |----------------|---------------|-----------|---------|
+        | 1 byte         | 1 byte        | n-bytes   | 2 bytes |
         :param uart:
         :param slave_addr:
         :param register_addr:
@@ -73,7 +75,7 @@ class Modbus:
                     return response
         raise TimeoutError("No valid response from Modbus slave within timeout")
 
-    def modbus_read_frame(self) -> None:
+    def run_modbus_client(self) -> None:
         """
 
         :return:
@@ -119,11 +121,24 @@ class Modbus:
         float_value = struct.unpack('>f', struct.pack('>I', data))[0]
         return float_value
 
-    def update_frame(self):
-        pass
+    def update_frame(self) -> None:
+        """
+        Parse values from modbus to one string - RAM limitation in Pico
+        :return:
+        """
+        grid_meter_frame_local = ""
+        commands = list(self.commands.keys())
+
+        for command in commands:
+            value_str = str(self.modbus_frame[command])
+            grid_meter_frame_local = grid_meter_frame_local + command + ":" + value_str + ";"
+
+        self.grid_meter_frame = grid_meter_frame_local
+        logging.info(f"Grid Meter Frame: updated - update_frame()")
 
     def validate_crc(self, response: bytes) -> bool:
         """
+        Check the CRC-16 for received messages
         :param response:
         :return:
         """
@@ -140,7 +155,7 @@ class Modbus:
     @staticmethod
     def calculate_crc(request_to_crc: bytes) -> bytes:
         """
-
+        Calculate CRC-16 for given frame
         :param request_to_crc:
         :return:
         """
@@ -156,14 +171,18 @@ class Modbus:
         return crc.to_bytes(2, "little")
 
     @staticmethod
-    def check_memory():
+    def check_memory() -> None:
         """
+        Call gc.collect() for startup garbage collection - problems with RAM usage in Rpi Pico
         :return:
         """
+        free_memory_before = gc.mem_free()
+        allocated_memory_before = gc.mem_alloc()
+
         gc.collect()
-        free_memory = gc.mem_free()
-        logging.info(f"FREE MEMORY:      {free_memory:>7}")
-        allocated_memory = gc.mem_alloc()
-        logging.info(f"ALLOCATED MEMORY: {allocated_memory:>7}")
-        total_memory = free_memory + allocated_memory
-        logging.info(f"TOTAL MEMORY:     {total_memory:>7}")
+
+        free_memory_after = gc.mem_free()
+        allocated_memory_after = gc.mem_alloc()
+
+        logging.info(f"FREE MEMORY:      {free_memory_before:>7} | {free_memory_after:>7}")
+        logging.info(f"ALLOCATED MEMORY: {allocated_memory_before:>7} | {allocated_memory_after:>7}")
